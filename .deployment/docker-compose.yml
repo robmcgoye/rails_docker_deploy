@@ -1,0 +1,68 @@
+services:
+  app:
+    image: {{REGUSER}}/{{NAME}}:{{VERSION}}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://{{POSTGRES_USER}}:{{POSTGRES_PASSWORD}}@db:5432/{{NAME}}
+      - REDIS_URL=redis://redis:6379
+      - RAILS_MASTER_KEY={{RAILS_MASTER_KEY}}
+    volumes:
+      - $HOME/.docker/config.json:/root/.docker/config.json
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rails-app.rule=Host(`{{HOST}}`)"
+      - "traefik.http.services.rails-app.loadbalancer.server.port={{PORT}}"
+      - "traefik.http.routers.rails-app.entrypoints=websecure"
+      - "traefik.http.routers.rails-app.tls=true"
+      - "traefik.http.routers.rails-app.tls.certresolver=selfsigned"
+    networks:
+      - internal
+
+  traefik:
+    image: traefik:v2.9
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.file.filename=/dynamic/traefik_dynamic.yml"
+      - "--entrypoints.websecure.http.tls=true"
+    ports:
+      # - "80:80"
+      - "443:443"
+      # - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik_certs:/certs"
+      - "./traefik_dynamic.yml:/dynamic/traefik_dynamic.yml"
+    labels:
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.rule=Host(`traefik.mgmt.ntrcomp.us`)"
+    networks:
+      - internal
+
+  db:
+    image: postgres:16.1
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: {{POSTGRES_USER}}
+      POSTGRES_PASSWORD: {{POSTGRES_PASSWORD}}
+    volumes:
+      - "./dbdata:/var/lib/postgresql/data"
+    networks:
+      - internal
+
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    name: traefik-internal
